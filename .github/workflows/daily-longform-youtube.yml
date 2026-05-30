@@ -30,6 +30,7 @@ jobs:
       OPENAI_IMAGE_QUALITY: medium
       OPENAI_TEXT_MODEL: gpt-4o-mini
       GEMINI_IMAGE_MODEL: gemini-2.5-flash-image
+      SCENE_IMAGE_MAX_WORKERS: "4"
       YOUTUBE_PRIVACY: private
 
     steps:

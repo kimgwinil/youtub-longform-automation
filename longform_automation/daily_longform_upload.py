@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from urllib import request
@@ -19,6 +20,7 @@ ROOT = Path.cwd()
 HISTORY = Path(__file__).with_name("topic-history.json")
 OUT = ROOT / "output" / datetime.now().strftime("%Y%m%d")
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
+SCENE_IMAGE_MAX_WORKERS = max(1, min(6, int(os.getenv("SCENE_IMAGE_MAX_WORKERS", "4"))))
 
 TOPICS = [
     {
@@ -331,8 +333,18 @@ def render_video(topic, scenes):
     weights = [len(scene["narration"]) for scene in scenes]
     scene_durations = [total * weight / sum(weights) for weight in weights]
 
-    for idx, scene in enumerate(scenes):
-        render_scene_image(scene, idx, len(scenes), raw_dir, frame_dir)
+    with ThreadPoolExecutor(max_workers=SCENE_IMAGE_MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(render_scene_image, scene, idx, len(scenes), raw_dir, frame_dir): idx
+            for idx, scene in enumerate(scenes)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                future.result()
+                print(f"Scene {idx + 1:02} image complete")
+            except Exception as exc:
+                raise RuntimeError(f"Scene {idx + 1:02} image failed: {exc}") from exc
 
     concat = OUT / "concat.txt"
     lines = []
