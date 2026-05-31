@@ -517,8 +517,9 @@ def main():
     topic = pick_topic(history)
     scenes = build_scenes(topic)
     video, srt = render_video(topic, scenes)
-    if not 180 <= duration(video) <= 360:
-        raise RuntimeError("Generated video duration is outside 3-6 minutes")
+    video_duration = duration(video)
+    if not 180 <= video_duration <= 360:
+        raise RuntimeError(f"Generated video duration is outside 3-6 minutes: {video_duration:.1f}s")
     upload(topic, video, srt)
     history.append({"topic": topic["topic"], "title": topic["title"], "created_at": datetime.now().isoformat(timespec="seconds"), "automated": True})
     save_history(history)
