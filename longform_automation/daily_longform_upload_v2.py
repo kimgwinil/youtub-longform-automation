@@ -6,6 +6,18 @@ import daily_longform_upload as base
 
 _generate_gemini = base.generate_gemini
 
+_TOPIC_PROMPT_USER = (
+    "Create one fresh Korean YouTube longform explainer topic as strict JSON. "
+    "Avoid every used topic. The tone should be informative, practical, and suitable for a Korean audience. "
+    "Fields required: id, topic, title, description, tags, subject, problem, solution, example. "
+    "description must include two short paragraphs and 5 Korean hashtags. "
+    "tags must be a list of 5 to 7 Korean strings. "
+    "subject must be an English visual prompt for realistic Korean documentary imagery. "
+    "problem, solution, and example must be concise Korean phrases. "
+    "example must describe a concrete Korean real-life situation and must not include English.\n\n"
+    "Used topics:\n{used_topics}"
+)
+
 
 def generate_gemini_with_fallback(prompt, path):
     try:
@@ -17,8 +29,21 @@ def generate_gemini_with_fallback(prompt, path):
         base.generate_openai(prompt, path)
 
 
-def generate_topic(history):
-    used_topics = [x.get("topic", "") for x in history if x.get("topic")]
+def _parse_and_validate_topic(raw, used_topics):
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    topic = json.loads(text)
+    required = {"id", "topic", "title", "description", "tags", "subject", "problem", "solution", "example"}
+    missing = sorted(required - set(topic))
+    if missing:
+        raise RuntimeError(f"Generated topic is missing fields: {missing}")
+    if topic["topic"] in used_topics:
+        raise RuntimeError("Generated topic duplicated a used topic")
+    return topic
+
+
+def _generate_topic_openai(used_topics):
     client = base.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     response = client.chat.completions.create(
         model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4o-mini"),
@@ -29,29 +54,42 @@ def generate_topic(history):
             },
             {
                 "role": "user",
-                "content": (
-                    "Create one fresh Korean YouTube longform explainer topic as strict JSON. "
-                    "Avoid every used topic. The tone should be informative, practical, and suitable for a Korean audience. "
-                    "Fields required: id, topic, title, description, tags, subject, problem, solution, example. "
-                    "description must include two short paragraphs and 5 Korean hashtags. "
-                    "tags must be a list of 5 to 7 Korean strings. "
-                    "subject must be an English visual prompt for realistic Korean documentary imagery. "
-                    "problem, solution, and example must be concise Korean phrases. "
-                    "example must describe a concrete Korean real-life situation and must not include English.\n\n"
-                    f"Used topics:\n{json.dumps(used_topics, ensure_ascii=False)}"
+                "content": _TOPIC_PROMPT_USER.format(
+                    used_topics=json.dumps(used_topics, ensure_ascii=False)
                 ),
             },
         ],
         temperature=0.85,
     )
-    topic = json.loads(response.choices[0].message.content.strip())
-    required = {"id", "topic", "title", "description", "tags", "subject", "problem", "solution", "example"}
-    missing = sorted(required - set(topic))
-    if missing:
-        raise RuntimeError(f"Generated topic is missing fields: {missing}")
-    if topic["topic"] in used_topics:
-        raise RuntimeError("Generated topic duplicated a used topic")
-    return topic
+    return _parse_and_validate_topic(response.choices[0].message.content, used_topics)
+
+
+def _generate_topic_gemini(used_topics):
+    from google import genai
+
+    client = genai.Client(
+        api_key=os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    )
+    prompt = (
+        "You return only valid JSON. Do not include markdown fences or commentary.\n\n"
+        + _TOPIC_PROMPT_USER.format(
+            used_topics=json.dumps(used_topics, ensure_ascii=False)
+        )
+    )
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash"),
+        contents=prompt,
+    )
+    return _parse_and_validate_topic(response.text, used_topics)
+
+
+def generate_topic(history):
+    used_topics = [x.get("topic", "") for x in history if x.get("topic")]
+    try:
+        return _generate_topic_openai(used_topics)
+    except Exception as exc:
+        print(f"OpenAI topic generation failed; falling back to Gemini: {exc}")
+        return _generate_topic_gemini(used_topics)
 
 
 def pick_topic(history):
