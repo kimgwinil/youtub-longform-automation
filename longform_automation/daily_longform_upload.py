@@ -354,6 +354,7 @@ def fit_background(path):
 
 
 def draw_wrapped(draw, text, xy, fnt, max_width, fill, spacing=12):
+    """Draw word-wrapped text and return the y coordinate after the last line."""
     x, y = xy
     lines, line = [], ""
     for ch in text:
@@ -367,16 +368,17 @@ def draw_wrapped(draw, text, xy, fnt, max_width, fill, spacing=12):
             line = ch
     if line:
         lines.append(line)
-    for line in lines:
-        draw.text((x, y), line, font=fnt, fill=fill)
-        box = draw.textbbox((0, 0), line, font=fnt)
+    for ln in lines:
+        draw.text((x, y), ln, font=fnt, fill=fill)
+        box = draw.textbbox((0, 0), ln, font=fnt)
         y += box[3] - box[1] + spacing
+    return y
 
 
 def draw_badge(draw, text, xy, fill=(255, 205, 77, 255), text_fill=(8, 10, 14, 255)):
     x, y = xy
-    draw.rounded_rectangle((x, y, x + 266, y + 62), radius=28, fill=fill)
-    draw.text((x + 30, y + 18), text, font=font(30), fill=text_fill)
+    draw.rounded_rectangle((x, y, x + 266, y + 56), radius=26, fill=fill)
+    draw.text((x + 28, y + 14), text, font=font(28), fill=text_fill)
 
 
 def draw_progress(draw, index, total, y=994, color=(255, 205, 77, 255)):
@@ -399,60 +401,76 @@ def draw_scene_overlay(draw, scene, index, total):
     badge_text = f"SCENE {index + 1:02}"
     title = _safe_text(scene, "title")
     caption = _safe_text(scene, "caption")
+    WHITE = (255, 255, 255, 255)
+    CAPTION_COLOR = (220, 230, 245, 255)
+    BADGE_W = 266
     layout = index % 5
 
     if layout == 0:
-        draw.rectangle((0, 0, 930, HEIGHT), fill=(5, 8, 14, 188))
-        draw_badge(draw, badge_text, (72, 70))
-        draw_wrapped(draw, title, (72, 210), font(70), 760, (255, 255, 255, 255), 16)
+        # Left vertical panel
+        draw.rectangle((0, 0, 900, HEIGHT), fill=(5, 8, 14, 200))
+        draw_badge(draw, badge_text, (72, 72))
+        title_bottom = draw_wrapped(draw, title, (72, 158), font(64), 740, WHITE, 14)
         if caption:
-            draw_wrapped(draw, caption, (72, 420), font(39), 760, (230, 236, 246, 255), 13)
+            draw_wrapped(draw, caption, (72, title_bottom + 22), font(36), 740, CAPTION_COLOR, 12)
         draw_progress(draw, index, total)
         return
 
     if layout == 1:
-        draw.rectangle((0, 610, WIDTH, HEIGHT), fill=(5, 8, 14, 202))
-        draw_badge(draw, badge_text, (72, 560), fill=(104, 211, 145, 255))
-        draw_wrapped(draw, title, (72, 680), font(66), 1180, (255, 255, 255, 255), 14)
-        if caption:
-            draw_wrapped(draw, caption, (72, 825), font(38), 1500, (235, 241, 245, 255), 12)
-        draw_progress(draw, index, total, y=1010, color=(104, 211, 145, 255))
+        # Bottom horizontal panel
+        draw.rectangle((0, 600, WIDTH, HEIGHT), fill=(5, 8, 14, 210))
+        # SCENE badge centered above the panel top edge
+        badge_x = (WIDTH - BADGE_W) // 2
+        draw_badge(draw, badge_text, (badge_x, 552), fill=(104, 211, 145, 255))
+        title_bottom = draw_wrapped(draw, title, (80, 648), font(58), 1760, WHITE, 12)
+        if caption and title_bottom + 16 < HEIGHT - 50:
+            draw_wrapped(draw, caption, (80, title_bottom + 16), font(34), CAPTION_COLOR, 11)
+        draw_progress(draw, index, total, y=1046, color=(104, 211, 145, 255))
         return
 
     if layout == 2:
-        draw.rectangle((990, 0, WIDTH, HEIGHT), fill=(5, 8, 14, 190))
-        draw_badge(draw, badge_text, (1088, 70), fill=(125, 211, 252, 255))
-        draw_wrapped(draw, title, (1088, 210), font(66), 700, (255, 255, 255, 255), 16)
+        # Right vertical panel
+        draw.rectangle((1020, 0, WIDTH, HEIGHT), fill=(5, 8, 14, 200))
+        draw_badge(draw, badge_text, (1060, 72), fill=(125, 211, 252, 255))
+        title_bottom = draw_wrapped(draw, title, (1060, 158), font(60), 790, WHITE, 14)
         if caption:
-            draw_wrapped(draw, caption, (1088, 430), font(38), 700, (232, 240, 245, 255), 13)
+            draw_wrapped(draw, caption, (1060, title_bottom + 22), font(34), CAPTION_COLOR, 12)
         draw_progress(draw, index, total, color=(125, 211, 252, 255))
         return
 
     if layout == 3:
-        draw.rectangle((0, 0, WIDTH, HEIGHT), fill=(4, 7, 12, 116))
-        draw.rounded_rectangle((260, 190, 1660, 760), radius=34, fill=(5, 8, 14, 184))
-        draw_badge(draw, badge_text, (827, 240), fill=(248, 113, 113, 255))
-        draw_wrapped(draw, title, (360, 350), font(72), 1200, (255, 255, 255, 255), 18)
-        if caption:
-            draw_wrapped(draw, caption, (360, 560), font(38), 1200, (238, 242, 247, 255), 12)
+        # Center card
+        draw.rectangle((0, 0, WIDTH, HEIGHT), fill=(4, 7, 12, 120))
+        draw.rounded_rectangle((200, 140, 1720, 840), radius=34, fill=(5, 8, 14, 200))
+        # SCENE badge centered inside card at top
+        badge_x = (WIDTH - BADGE_W) // 2
+        draw_badge(draw, badge_text, (badge_x, 192), fill=(248, 113, 113, 255))
+        title_bottom = draw_wrapped(draw, title, (280, 282), font(66), 1360, WHITE, 16)
+        if caption and title_bottom + 20 < 830:
+            draw_wrapped(draw, caption, (280, title_bottom + 20), font(35), CAPTION_COLOR, 12)
         draw_progress(draw, index, total, color=(248, 113, 113, 255))
         return
 
-    draw.rectangle((0, 0, WIDTH, 330), fill=(5, 8, 14, 205))
-    draw.rectangle((0, 850, WIDTH, HEIGHT), fill=(5, 8, 14, 176))
-    draw_badge(draw, badge_text, (72, 58), fill=(250, 204, 21, 255))
-    draw_wrapped(draw, title, (380, 62), font(62), 1320, (255, 255, 255, 255), 14)
+    # Layout 4 — Top + Bottom bands
+    draw.rectangle((0, 0, WIDTH, 300), fill=(5, 8, 14, 215))
+    draw.rectangle((0, 830, WIDTH, HEIGHT), fill=(5, 8, 14, 200))
+    # SCENE badge centered in top band
+    badge_x = (WIDTH - BADGE_W) // 2
+    draw_badge(draw, badge_text, (badge_x, 44), fill=(250, 204, 21, 255))
+    draw_wrapped(draw, title, (80, 125), font(58), 1760, WHITE, 12)
     if caption:
-        draw_wrapped(draw, caption, (72, 888), font(40), 1500, (239, 244, 248, 255), 12)
-    draw_progress(draw, index, total, y=1020, color=(250, 204, 21, 255))
+        draw_wrapped(draw, caption, (80, 858), font(37), CAPTION_COLOR, 12)
+    draw_progress(draw, index, total, y=1044, color=(250, 204, 21, 255))
 
 
 def render_scene_image(scene, index, total, raw_dir, frame_dir):
     raw = raw_dir / f"scene-{index + 1:02}-{scene['provider']}.png"
     frame = frame_dir / f"scene-{index + 1:02}.jpg"
     prompt = (
-        "Realistic cinematic Korean YouTube documentary still, no text, no logos, no watermark, 16:9. "
-        "Leave clean negative space for editorial title overlays. "
+        "Realistic cinematic Korean YouTube documentary still, 16:9. "
+        "STRICT RULE: absolutely zero text, zero letters, zero numbers, zero signs, zero labels, "
+        "zero captions, zero subtitles, zero watermarks, zero logos anywhere in the image. "
+        "Leave generous clean negative space on left or bottom for editorial overlays. "
         f"{scene['visual']} Narration context: {scene['narration']}"
     )
     if raw.exists() and raw.stat().st_size == 0:
