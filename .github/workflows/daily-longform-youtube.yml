@@ -27,6 +27,7 @@ jobs:
       ELEVENLABS_TEXT_NORMALIZATION: "on"
       ELEVENLABS_SEED: "20260601"
       ENABLE_BGM: "false"
+      ENABLE_SLIDE_CAPTIONS: "false"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}

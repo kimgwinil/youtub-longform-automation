@@ -23,6 +23,7 @@ OUT = ROOT / "output" / datetime.now().strftime("%Y%m%d")
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 SCENE_IMAGE_MAX_WORKERS = max(1, min(6, int(os.getenv("SCENE_IMAGE_MAX_WORKERS", "4"))))
 BGM_ENABLED = os.getenv("ENABLE_BGM", "false").lower() == "true"
+SLIDE_CAPTIONS_ENABLED = os.getenv("ENABLE_SLIDE_CAPTIONS", "false").lower() == "true"
 
 TOPICS = [
     {
@@ -465,7 +466,7 @@ def draw_scene_overlay(draw, scene, index, total):
     badge_text = f"SCENE {index + 1:02}"
     title = _safe_text(scene, "title")
     caption = _safe_text(scene, "caption")
-    show_caption = should_show_caption(title, caption)
+    show_caption = SLIDE_CAPTIONS_ENABLED and should_show_caption(title, caption)
     WHITE = (255, 255, 255, 255)
     CAPTION_COLOR = (210, 225, 245, 255)
     BG = (5, 8, 14)          # panel base colour
