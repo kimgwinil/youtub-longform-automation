@@ -574,14 +574,33 @@ def render_video(topic, scenes):
     raw_dir.mkdir(exist_ok=True)
     frame_dir.mkdir(exist_ok=True)
 
-    narration_text = "\n\n".join(scene["narration"] for scene in scenes)
-    raw_audio = OUT / "narration.mp3"
+    # Generate TTS per scene so each gets fresh voice energy (not one long concatenated request)
+    scene_wav_files = []
+    scene_durations = []
+    for idx, scene in enumerate(scenes):
+        scene_mp3 = OUT / f"scene-{idx + 1:02}-tts.mp3"
+        scene_wav = OUT / f"scene-{idx + 1:02}-tts.wav"
+        if not scene_mp3.exists() or scene_mp3.stat().st_size == 0:
+            synthesize_tts(scene["narration"], scene_mp3)
+            print(f"TTS scene {idx + 1:02} complete")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(scene_mp3), "-ar", "48000", "-ac", "2", str(scene_wav)],
+            check=True, capture_output=True,
+        )
+        scene_durations.append(duration(scene_wav))
+        scene_wav_files.append(scene_wav)
+
+    # Concatenate all scene wavs into one narration track
     wav_audio = OUT / "narration.wav"
-    synthesize_tts(narration_text, raw_audio)
-    subprocess.run(["ffmpeg", "-y", "-i", str(raw_audio), "-ar", "48000", "-ac", "2", str(wav_audio)], check=True)
-    total = duration(wav_audio)
-    weights = [len(scene["narration"]) for scene in scenes]
-    scene_durations = [total * weight / sum(weights) for weight in weights]
+    audio_list = OUT / "audio_concat.txt"
+    audio_list.write_text(
+        "\n".join(f"file '{w.name}'" for w in scene_wav_files), encoding="utf-8"
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(audio_list), str(wav_audio)],
+        check=True, capture_output=True,
+    )
+    total = sum(scene_durations)
 
     render_scene_images(scenes, raw_dir, frame_dir)
 
