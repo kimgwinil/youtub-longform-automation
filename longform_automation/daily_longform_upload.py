@@ -22,6 +22,7 @@ HISTORY = Path(__file__).with_name("topic-history.json")
 OUT = ROOT / "output" / datetime.now().strftime("%Y%m%d")
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 SCENE_IMAGE_MAX_WORKERS = max(1, min(6, int(os.getenv("SCENE_IMAGE_MAX_WORKERS", "4"))))
+BGM_ENABLED = os.getenv("ENABLE_BGM", "false").lower() == "true"
 
 TOPICS = [
     {
@@ -155,8 +156,9 @@ def generate_topic(history):
             "description must include two short paragraphs and 5 Korean hashtags. "
             "tags must be a list of 5 to 7 Korean strings. "
             "subject must be an English visual prompt for realistic Korean documentary imagery. "
-            "problem, solution, and example must be concise Korean phrases. "
-            "example must describe a concrete Korean real-life situation and must not include English.\n\n"
+            "problem, solution, and example must be concise Korean phrases using standard Korean spelling. "
+            "example must describe a concrete Korean real-life situation and must not include English. "
+            "Do not use slang, intentionally misspelled Korean, or unclear abbreviations.\n\n"
             f"Used topics:\n{json.dumps(used_topics, ensure_ascii=False)}"
         ),
     }
@@ -365,14 +367,26 @@ def fit_background(path):
     return img.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 
 
-def draw_wrapped(draw, text, xy, fnt, max_width, fill, spacing=12):
-    """Draw word-wrapped text and return the y coordinate after the last line."""
-    x, y = xy
+def text_size(draw, text, fnt):
+    box = draw.textbbox((0, 0), text, font=fnt)
+    return box[2] - box[0], box[3] - box[1]
+
+
+def draw_text_centered(draw, text, rect, fnt, fill):
+    left, top, right, bottom = rect
+    box = draw.textbbox((0, 0), text, font=fnt)
+    width, height = box[2] - box[0], box[3] - box[1]
+    x = left + ((right - left) - width) / 2 - box[0]
+    y = top + ((bottom - top) - height) / 2 - box[1]
+    draw.text((x, y), text, font=fnt, fill=fill)
+
+
+def wrap_text(draw, text, fnt, max_width):
     lines, line = [], ""
     for ch in text:
         trial = line + ch
-        box = draw.textbbox((0, 0), trial, font=fnt)
-        if box[2] - box[0] <= max_width:
+        width, _ = text_size(draw, trial, fnt)
+        if width <= max_width:
             line = trial
         else:
             if line:
@@ -380,17 +394,26 @@ def draw_wrapped(draw, text, xy, fnt, max_width, fill, spacing=12):
             line = ch
     if line:
         lines.append(line)
-    for ln in lines:
-        draw.text((x, y), ln, font=fnt, fill=fill)
-        box = draw.textbbox((0, 0), ln, font=fnt)
-        y += box[3] - box[1] + spacing
+    return lines
+
+
+def draw_wrapped(draw, text, xy, fnt, max_width, fill, spacing=12, align="left"):
+    """Draw wrapped text and return the y coordinate after the last line."""
+    x, y = xy
+    lines = wrap_text(draw, text, fnt, max_width)
+    for line in lines:
+        width, height = text_size(draw, line, fnt)
+        line_x = x + (max_width - width) / 2 if align == "center" else x
+        draw.text((line_x, y), line, font=fnt, fill=fill)
+        y += height + spacing
     return y
 
 
 def draw_badge(draw, text, xy, fill=(255, 205, 77, 255), text_fill=(8, 10, 14, 255)):
     x, y = xy
-    draw.rounded_rectangle((x, y, x + 266, y + 56), radius=26, fill=fill)
-    draw.text((x + 28, y + 14), text, font=font(28), fill=text_fill)
+    rect = (x, y, x + 266, y + 56)
+    draw.rounded_rectangle(rect, radius=26, fill=fill)
+    draw_text_centered(draw, text, rect, font(30), text_fill)
 
 
 def draw_progress(draw, index, total, y=994, color=(255, 205, 77, 255)):
@@ -463,9 +486,9 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rounded_rectangle((200, 130, 1720, 850), radius=36, fill=SOLID)
         badge_x = (WIDTH - BADGE_W) // 2
         draw_badge(draw, badge_text, (badge_x, 180), fill=(248, 113, 113, 255))
-        title_bottom = draw_wrapped(draw, title, (280, 270), font(66), 1360, WHITE, 16)
+        title_bottom = draw_wrapped(draw, title, (280, 270), font(66), 1360, WHITE, 16, align="center")
         if caption and title_bottom + 20 < 840:
-            draw_wrapped(draw, caption, (280, title_bottom + 20), font(35), 1360, CAPTION_COLOR, 12)
+            draw_wrapped(draw, caption, (280, title_bottom + 20), font(35), 1360, CAPTION_COLOR, 12, align="center")
         draw_progress(draw, index, total, color=(248, 113, 113, 255))
         return
 
@@ -489,6 +512,9 @@ def render_scene_image(scene, index, total, raw_dir, frame_dir):
         "Realistic cinematic Korean YouTube documentary still, 16:9. "
         "STRICT RULE: absolutely zero text, zero letters, zero numbers, zero signs, zero labels, "
         "zero captions, zero subtitles, zero watermarks, zero logos anywhere in the image. "
+        "Do not render any written language, Hangul, English letters, numbers, symbols, UI text, signs, labels, subtitles, logos, or watermark. "
+        "Avoid books, papers, screens, posters, whiteboards, or signboards with visible writing. "
+        "If text-like detail would be needed, replace it with clean abstract shapes, blank surfaces, or non-readable visual metaphors. "
         "Leave generous clean negative space on left or bottom for editorial overlays. "
         f"{scene['visual']} Narration context: {scene['narration']}"
     )
@@ -532,13 +558,14 @@ def render_scene_images(scenes, raw_dir, frame_dir):
 
 def tts_voice_ids():
     voice_ids = [os.environ["ELEVENLABS_VOICE_ID"]]
-    fallback = os.getenv("ELEVENLABS_FALLBACK_VOICE_IDS", "")
-    voice_ids.extend(x.strip() for x in fallback.split(",") if x.strip())
+    if os.getenv("ELEVENLABS_ALLOW_FALLBACK", "false").lower() == "true":
+        fallback = os.getenv("ELEVENLABS_FALLBACK_VOICE_IDS", "")
+        voice_ids.extend(x.strip() for x in fallback.split(",") if x.strip())
     return list(dict.fromkeys(voice_ids))
 
 
 def elevenlabs_tts_with_voice(text, path, voice_id):
-    payload = json.dumps({
+    payload_data = {
         "text": text,
         "model_id": os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2"),
         "voice_settings": {
@@ -548,7 +575,12 @@ def elevenlabs_tts_with_voice(text, path, voice_id):
             "use_speaker_boost": os.getenv("ELEVENLABS_SPEAKER_BOOST", "true").lower() != "false",
             "speed": float(os.getenv("ELEVENLABS_SPEED", "0.94")),
         },
-    }).encode("utf-8")
+        "apply_text_normalization": os.getenv("ELEVENLABS_TEXT_NORMALIZATION", "on"),
+    }
+    seed = os.getenv("ELEVENLABS_SEED")
+    if seed:
+        payload_data["seed"] = int(seed)
+    payload = json.dumps(payload_data).encode("utf-8")
     req = request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
         data=payload,
@@ -587,6 +619,12 @@ def synthesize_tts(text, path):
     raise RuntimeError("All TTS providers failed: " + " | ".join(errors))
 
 
+def normalize_narration_text(text):
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+([.,!?])", r"\1", text)
+    return text
+
+
 def duration(path):
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(path)],
@@ -611,33 +649,14 @@ def render_video(topic, scenes):
     raw_dir.mkdir(exist_ok=True)
     frame_dir.mkdir(exist_ok=True)
 
-    # Generate TTS per scene so each gets fresh voice energy (not one long concatenated request)
-    scene_wav_files = []
-    scene_durations = []
-    for idx, scene in enumerate(scenes):
-        scene_mp3 = OUT / f"scene-{idx + 1:02}-tts.mp3"
-        scene_wav = OUT / f"scene-{idx + 1:02}-tts.wav"
-        if not scene_mp3.exists() or scene_mp3.stat().st_size == 0:
-            synthesize_tts(scene["narration"], scene_mp3)
-            print(f"TTS scene {idx + 1:02} complete")
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(scene_mp3), "-ar", "48000", "-ac", "2", str(scene_wav)],
-            check=True, capture_output=True,
-        )
-        scene_durations.append(duration(scene_wav))
-        scene_wav_files.append(scene_wav)
-
-    # Concatenate all scene wavs into one narration track
+    narration_text = normalize_narration_text(" ".join(scene["narration"] for scene in scenes))
+    raw_audio = OUT / "narration.mp3"
     wav_audio = OUT / "narration.wav"
-    audio_list = OUT / "audio_concat.txt"
-    audio_list.write_text(
-        "\n".join(f"file '{w.name}'" for w in scene_wav_files), encoding="utf-8"
-    )
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(audio_list), str(wav_audio)],
-        check=True, capture_output=True,
-    )
-    total = sum(scene_durations)
+    synthesize_tts(narration_text, raw_audio)
+    subprocess.run(["ffmpeg", "-y", "-i", str(raw_audio), "-af", "loudnorm=I=-16:TP=-1.5:LRA=8,aresample=48000", "-ar", "48000", "-ac", "1", str(wav_audio)], check=True)
+    total = duration(wav_audio)
+    weights = [len(scene["narration"]) for scene in scenes]
+    scene_durations = [total * weight / sum(weights) for weight in weights]
 
     render_scene_images(scenes, raw_dir, frame_dir)
 
@@ -657,10 +676,15 @@ def render_video(topic, scenes):
     srt.write_text("\n".join(blocks), encoding="utf-8")
 
     silent = OUT / "silent.mp4"
+    bgm = OUT / "bgm.wav"
     mixed = OUT / "mixed.m4a"
     video = OUT / "final.mp4"
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-vf", f"scale={WIDTH}:{HEIGHT},format=yuv420p", "-r", str(FPS), "-c:v", "libx264", "-crf", "19", str(silent)], check=True)
-    subprocess.run(["ffmpeg", "-y", "-i", str(wav_audio), "-filter_complex", "[0:a]volume=2.5[a0]", "-map", "0:v?", "-map", "[a0]", "-c:a", "aac", "-b:a", "192k", str(mixed)], check=True)
+    if BGM_ENABLED:
+        subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency=82:sample_rate=48000:duration={total + 1}", "-filter_complex", "volume=0.010", str(bgm)], check=True)
+        subprocess.run(["ffmpeg", "-y", "-i", str(wav_audio), "-i", str(bgm), "-filter_complex", "[0:a]volume=1.0[a0];[1:a]volume=0.03[a1];[a0][a1]amix=inputs=2:duration=first", "-c:a", "aac", "-b:a", "192k", str(mixed)], check=True)
+    else:
+        subprocess.run(["ffmpeg", "-y", "-i", str(wav_audio), "-c:a", "aac", "-b:a", "192k", str(mixed)], check=True)
     subprocess.run(["ffmpeg", "-y", "-i", str(silent), "-i", str(mixed), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", str(video)], check=True)
     return video, srt
 

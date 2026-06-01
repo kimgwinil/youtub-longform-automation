@@ -14,8 +14,9 @@ _TOPIC_PROMPT_USER = (
     "description must include two short paragraphs and 5 Korean hashtags. "
     "tags must be a list of 5 to 7 Korean strings. "
     "subject must be an English visual prompt for realistic Korean documentary imagery. "
-    "problem, solution, and example must be concise Korean phrases. "
-    "example must describe a concrete Korean real-life situation and must not include English.\n\n"
+    "problem, solution, and example must be concise Korean phrases using standard Korean spelling. "
+    "example must describe a concrete Korean real-life situation and must not include English. "
+    "Do not use slang, intentionally misspelled Korean, or unclear abbreviations.\n\n"
     "Used topics:\n{used_topics}"
 )
 
