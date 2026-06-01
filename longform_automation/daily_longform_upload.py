@@ -90,6 +90,49 @@ LAYOUT_TITLES = [
     "결론",
 ]
 
+LAYOUT_TITLES_EN = [
+    "Today's Question",
+    "The Visible Problem",
+    "Root Cause",
+    "First Cause",
+    "Second Cause",
+    "Third Cause",
+    "What's Often Missed",
+    "Escalation Point",
+    "Risk Assessment",
+    "Steps to Resolve",
+    "Common Patterns",
+    "Simple Example",
+    "Execution Connects",
+    "Action Item Today",
+    "Small Experiment",
+    "Final Check",
+    "Conclusion",
+]
+
+
+def _find_cjk_font():
+    candidates = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            try:
+                ImageFont.truetype(path, size=20, index=0)
+                return path
+            except Exception:
+                continue
+    return None
+
+
+_CJK_FONT_PATH = _find_cjk_font()
+
+
+def _has_korean(text):
+    return any("가" <= ch <= "힣" or "ᄀ" <= ch <= "ᇿ" for ch in text)
+
 
 def load_history():
     if not HISTORY.exists():
@@ -172,25 +215,21 @@ def build_scenes(topic):
     scenes = []
     for index, narration in enumerate(narrations):
         title = LAYOUT_TITLES[index]
+        title_en = LAYOUT_TITLES_EN[index]
         scenes.append({
             "title": title,
+            "title_en": title_en,
             "caption": narration.split(".")[0].strip() + ".",
             "narration": narration,
-            "visual": f"{topic['subject']}. Scene focus: {title}. No text, no logos, no watermark.",
+            "visual": f"{topic['subject']}. Scene focus: {title_en}. No text, no logos, no watermark.",
             "provider": "openai" if index % 2 == 0 else "gemini",
         })
     return scenes
 
 
 def font(size):
-    candidates = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-    ]
-    for path in candidates:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size=size, index=0)
+    if _CJK_FONT_PATH:
+        return ImageFont.truetype(_CJK_FONT_PATH, size=size, index=0)
     return ImageFont.load_default()
 
 
@@ -270,17 +309,28 @@ def draw_progress(draw, index, total, y=994, color=(255, 205, 77, 255)):
     draw.line((x1, y, x1 + int((x2 - x1) * ((index + 1) / total)), y), fill=color, width=8)
 
 
+def _safe_text(scene, key):
+    """Return Korean text if CJK font is available, otherwise English fallback or empty string."""
+    text = scene.get(key, "")
+    if _has_korean(text) and not _CJK_FONT_PATH:
+        if key == "title":
+            return scene.get("title_en", "")
+        return ""
+    return text
+
+
 def draw_scene_overlay(draw, scene, index, total):
     badge_text = f"SCENE {index + 1:02}"
-    title = scene["title"]
-    caption = scene["caption"]
+    title = _safe_text(scene, "title")
+    caption = _safe_text(scene, "caption")
     layout = index % 5
 
     if layout == 0:
         draw.rectangle((0, 0, 930, HEIGHT), fill=(5, 8, 14, 188))
         draw_badge(draw, badge_text, (72, 70))
         draw_wrapped(draw, title, (72, 210), font(70), 760, (255, 255, 255, 255), 16)
-        draw_wrapped(draw, caption, (72, 420), font(39), 760, (230, 236, 246, 255), 13)
+        if caption:
+            draw_wrapped(draw, caption, (72, 420), font(39), 760, (230, 236, 246, 255), 13)
         draw_progress(draw, index, total)
         return
 
@@ -288,7 +338,8 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rectangle((0, 610, WIDTH, HEIGHT), fill=(5, 8, 14, 202))
         draw_badge(draw, badge_text, (72, 560), fill=(104, 211, 145, 255))
         draw_wrapped(draw, title, (72, 680), font(66), 1180, (255, 255, 255, 255), 14)
-        draw_wrapped(draw, caption, (72, 825), font(38), 1500, (235, 241, 245, 255), 12)
+        if caption:
+            draw_wrapped(draw, caption, (72, 825), font(38), 1500, (235, 241, 245, 255), 12)
         draw_progress(draw, index, total, y=1010, color=(104, 211, 145, 255))
         return
 
@@ -296,7 +347,8 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rectangle((990, 0, WIDTH, HEIGHT), fill=(5, 8, 14, 190))
         draw_badge(draw, badge_text, (1088, 70), fill=(125, 211, 252, 255))
         draw_wrapped(draw, title, (1088, 210), font(66), 700, (255, 255, 255, 255), 16)
-        draw_wrapped(draw, caption, (1088, 430), font(38), 700, (232, 240, 245, 255), 13)
+        if caption:
+            draw_wrapped(draw, caption, (1088, 430), font(38), 700, (232, 240, 245, 255), 13)
         draw_progress(draw, index, total, color=(125, 211, 252, 255))
         return
 
@@ -305,7 +357,8 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rounded_rectangle((260, 190, 1660, 760), radius=34, fill=(5, 8, 14, 184))
         draw_badge(draw, badge_text, (827, 240), fill=(248, 113, 113, 255))
         draw_wrapped(draw, title, (360, 350), font(72), 1200, (255, 255, 255, 255), 18)
-        draw_wrapped(draw, caption, (360, 560), font(38), 1200, (238, 242, 247, 255), 12)
+        if caption:
+            draw_wrapped(draw, caption, (360, 560), font(38), 1200, (238, 242, 247, 255), 12)
         draw_progress(draw, index, total, color=(248, 113, 113, 255))
         return
 
@@ -313,7 +366,8 @@ def draw_scene_overlay(draw, scene, index, total):
     draw.rectangle((0, 850, WIDTH, HEIGHT), fill=(5, 8, 14, 176))
     draw_badge(draw, badge_text, (72, 58), fill=(250, 204, 21, 255))
     draw_wrapped(draw, title, (380, 62), font(62), 1320, (255, 255, 255, 255), 14)
-    draw_wrapped(draw, caption, (72, 888), font(40), 1500, (239, 244, 248, 255), 12)
+    if caption:
+        draw_wrapped(draw, caption, (72, 888), font(40), 1500, (239, 244, 248, 255), 12)
     draw_progress(draw, index, total, y=1020, color=(250, 204, 21, 255))
 
 
