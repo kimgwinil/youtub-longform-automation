@@ -250,16 +250,32 @@ def generate_gemini(prompt, path):
     from google.genai import types
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"])
-    response = client.models.generate_content(
-        model=os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
-        contents=prompt,
-        config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-    )
-    for part in response.candidates[0].content.parts:
-        if getattr(part, "inline_data", None):
-            path.write_bytes(part.inline_data.data)
-            return
-    raise RuntimeError("Gemini did not return image data")
+    primary = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    fallbacks = [m for m in [
+        "gemini-2.5-flash-image",
+        "nano-banana-pro-preview",
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+    ] if m != primary]
+    errors = []
+    for model in [primary] + fallbacks:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+            )
+            for part in response.candidates[0].content.parts:
+                if getattr(part, "inline_data", None):
+                    path.write_bytes(part.inline_data.data)
+                    print(f"Gemini image generated with model: {model}")
+                    return
+            errors.append(f"{model}: no image data returned")
+            print(f"Gemini model {model} returned no image; trying next")
+        except Exception as exc:
+            errors.append(f"{model}: {exc}")
+            print(f"Gemini model {model} failed: {exc}; trying next")
+    raise RuntimeError("All Gemini image models failed: " + " | ".join(errors))
 
 
 def fit_background(path):
