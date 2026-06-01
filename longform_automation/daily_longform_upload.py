@@ -625,6 +625,51 @@ def normalize_narration_text(text):
     return text
 
 
+def transcode_narration_audio(source, target):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(source),
+            "-af",
+            "loudnorm=I=-16:TP=-1.5:LRA=8,aresample=48000",
+            "-ar",
+            "48000",
+            "-ac",
+            "1",
+            str(target),
+        ],
+        check=True,
+    )
+
+
+def synthesize_scene_narrations(scenes, out_dir):
+    scene_wavs = []
+    scene_durations = []
+    for idx, scene in enumerate(scenes, 1):
+        scene_text = normalize_narration_text(scene["narration"])
+        scene_mp3 = out_dir / f"scene-{idx:02}-tts.mp3"
+        scene_wav = out_dir / f"scene-{idx:02}-tts.wav"
+        synthesize_tts(scene_text, scene_mp3)
+        transcode_narration_audio(scene_mp3, scene_wav)
+        scene_wavs.append(scene_wav)
+        scene_durations.append(duration(scene_wav))
+        print(f"TTS scene {idx:02} complete")
+    return scene_wavs, scene_durations
+
+
+def concat_audio_files(audio_files, concat_path, output_path):
+    concat_path.write_text(
+        "\n".join(f"file '{path.resolve()}'" for path in audio_files),
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_path), "-c", "copy", str(output_path)],
+        check=True,
+    )
+
+
 def duration(path):
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(path)],
@@ -649,14 +694,11 @@ def render_video(topic, scenes):
     raw_dir.mkdir(exist_ok=True)
     frame_dir.mkdir(exist_ok=True)
 
-    narration_text = normalize_narration_text(" ".join(scene["narration"] for scene in scenes))
-    raw_audio = OUT / "narration.mp3"
     wav_audio = OUT / "narration.wav"
-    synthesize_tts(narration_text, raw_audio)
-    subprocess.run(["ffmpeg", "-y", "-i", str(raw_audio), "-af", "loudnorm=I=-16:TP=-1.5:LRA=8,aresample=48000", "-ar", "48000", "-ac", "1", str(wav_audio)], check=True)
-    total = duration(wav_audio)
-    weights = [len(scene["narration"]) for scene in scenes]
-    scene_durations = [total * weight / sum(weights) for weight in weights]
+    audio_concat = OUT / "audio_concat.txt"
+    scene_wavs, scene_durations = synthesize_scene_narrations(scenes, OUT)
+    concat_audio_files(scene_wavs, audio_concat, wav_audio)
+    total = sum(scene_durations)
 
     render_scene_images(scenes, raw_dir, frame_dir)
 
