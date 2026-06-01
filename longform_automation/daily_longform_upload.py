@@ -14,7 +14,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 ROOT = Path.cwd()
@@ -352,7 +352,7 @@ def generate_gemini(prompt, path):
     raise RuntimeError("All Gemini image models failed: " + " | ".join(errors))
 
 
-def fit_background(path):
+def fit_cover(path):
     img = Image.open(path).convert("RGB")
     target = WIDTH / HEIGHT
     ratio = img.width / img.height
@@ -365,6 +365,20 @@ def fit_background(path):
         top = (img.height - new_h) // 2
         img = img.crop((0, top, img.width, top + new_h))
     return img.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+
+
+def fit_background(path):
+    src = Image.open(path).convert("RGB")
+    bg = fit_cover(path).filter(ImageFilter.GaussianBlur(radius=28))
+    bg = Image.blend(bg, Image.new("RGB", bg.size, (5, 8, 14)), 0.18)
+
+    scale = min(WIDTH / src.width, HEIGHT / src.height)
+    new_size = (int(src.width * scale), int(src.height * scale))
+    contained = src.resize(new_size, Image.Resampling.LANCZOS)
+    x = (WIDTH - contained.width) // 2
+    y = (HEIGHT - contained.height) // 2
+    bg.paste(contained, (x, y))
+    return bg
 
 
 def text_size(draw, text, fnt):
@@ -432,10 +446,26 @@ def _safe_text(scene, key):
     return text
 
 
+def normalize_overlay_text(text):
+    text = re.sub(r"\s+", "", text or "")
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", text).lower()
+
+
+def should_show_caption(title, caption):
+    title_norm = normalize_overlay_text(title)
+    caption_norm = normalize_overlay_text(caption)
+    if not caption_norm:
+        return False
+    if title_norm and (caption_norm.startswith(title_norm) or title_norm in caption_norm):
+        return False
+    return True
+
+
 def draw_scene_overlay(draw, scene, index, total):
     badge_text = f"SCENE {index + 1:02}"
     title = _safe_text(scene, "title")
     caption = _safe_text(scene, "caption")
+    show_caption = should_show_caption(title, caption)
     WHITE = (255, 255, 255, 255)
     CAPTION_COLOR = (210, 225, 245, 255)
     BG = (5, 8, 14)          # panel base colour
@@ -451,7 +481,7 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rectangle((860, 0, 960, HEIGHT), fill=(*BG, 80))
         draw_badge(draw, badge_text, (72, 72))
         title_bottom = draw_wrapped(draw, title, (72, 158), font(64), 740, WHITE, 14)
-        if caption:
+        if show_caption:
             draw_wrapped(draw, caption, (72, title_bottom + 22), font(36), 740, CAPTION_COLOR, 12)
         draw_progress(draw, index, total)
         return
@@ -464,7 +494,7 @@ def draw_scene_overlay(draw, scene, index, total):
         badge_x = (WIDTH - BADGE_W) // 2
         draw_badge(draw, badge_text, (badge_x, 530), fill=(104, 211, 145, 255))
         title_bottom = draw_wrapped(draw, title, (80, 628), font(56), 1760, WHITE, 12)
-        if caption and title_bottom + 14 < HEIGHT - 48:
+        if show_caption and title_bottom + 14 < HEIGHT - 48:
             draw_wrapped(draw, caption, (80, title_bottom + 14), font(33), 1760, CAPTION_COLOR, 11)
         draw_progress(draw, index, total, y=1046, color=(104, 211, 145, 255))
         return
@@ -475,7 +505,7 @@ def draw_scene_overlay(draw, scene, index, total):
         draw.rectangle((960, 0, 1022, HEIGHT), fill=(*BG, 80))
         draw_badge(draw, badge_text, (1060, 72), fill=(125, 211, 252, 255))
         title_bottom = draw_wrapped(draw, title, (1060, 158), font(60), 790, WHITE, 14)
-        if caption:
+        if show_caption:
             draw_wrapped(draw, caption, (1060, title_bottom + 22), font(34), 790, CAPTION_COLOR, 12)
         draw_progress(draw, index, total, color=(125, 211, 252, 255))
         return
@@ -487,7 +517,7 @@ def draw_scene_overlay(draw, scene, index, total):
         badge_x = (WIDTH - BADGE_W) // 2
         draw_badge(draw, badge_text, (badge_x, 180), fill=(248, 113, 113, 255))
         title_bottom = draw_wrapped(draw, title, (280, 270), font(66), 1360, WHITE, 16, align="center")
-        if caption and title_bottom + 20 < 840:
+        if show_caption and title_bottom + 20 < 840:
             draw_wrapped(draw, caption, (280, title_bottom + 20), font(35), 1360, CAPTION_COLOR, 12, align="center")
         draw_progress(draw, index, total, color=(248, 113, 113, 255))
         return
@@ -500,7 +530,7 @@ def draw_scene_overlay(draw, scene, index, total):
     badge_x = (WIDTH - BADGE_W) // 2
     draw_badge(draw, badge_text, (badge_x, 38), fill=(250, 204, 21, 255))
     draw_wrapped(draw, title, (80, 120), font(58), 1760, WHITE, 12)
-    if caption:
+    if show_caption:
         draw_wrapped(draw, caption, (80, 862), font(37), 1760, CAPTION_COLOR, 12)
     draw_progress(draw, index, total, y=1044, color=(250, 204, 21, 255))
 
