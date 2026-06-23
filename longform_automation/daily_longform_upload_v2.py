@@ -235,15 +235,15 @@ def generate_topic(history):
     for attempt in range(_MAX_TOPIC_RETRIES):
         temperature = _BASE_TEMPERATURE + attempt * _TEMPERATURE_STEP
         try:
-            return _generate_topic_openai(used_topics, temperature=temperature)
-        except Exception as exc:
-            last_exc = exc
-            print(f"OpenAI topic generation attempt {attempt + 1} failed (temp={temperature:.2f}): {exc}")
-        try:
             return _generate_topic_gemini(used_topics, temperature=temperature)
         except Exception as exc:
             last_exc = exc
             print(f"Gemini topic generation attempt {attempt + 1} failed (temp={temperature:.2f}): {exc}")
+        try:
+            return _generate_topic_openai(used_topics, temperature=temperature)
+        except Exception as exc:
+            last_exc = exc
+            print(f"OpenAI topic generation attempt {attempt + 1} failed (temp={temperature:.2f}): {exc}")
     try:
         return _manual_topic_fallback(used_topics)
     except Exception as fallback_exc:
