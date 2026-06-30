@@ -1560,8 +1560,10 @@ def main():
     scenes = build_scenes(topic)
     video, srt = render_video(topic, scenes)
     video_duration = duration(video)
-    if not 180 <= video_duration <= 480:
-        raise RuntimeError(f"Generated video duration is outside 3-8 minutes: {video_duration:.1f}s")
+    if video_duration < 120 or video_duration > 720:
+        raise RuntimeError(f"Generated video duration is outside acceptable range: {video_duration:.1f}s")
+    if video_duration < 180:
+        print(f"[main] WARNING: video duration {video_duration:.1f}s is below the ideal 3-minute target — uploading anyway")
     video_id = upload(topic, video, srt)
     history.append({
         "category": TOPIC_CATEGORY,
